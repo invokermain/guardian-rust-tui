@@ -36,7 +36,16 @@ fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>, io::Error> {
     Ok(terminal)
 }
 
-const SECTIONS: [&str; 2] = ["world", "sport"];
+const SECTIONS: [&str; 8] = [
+    "world",
+    "sport",
+    "technology",
+    "science",
+    "culture",
+    "lifeandstyle",
+    "money",
+    "weather",
+];
 
 struct StoryList {
     pub state: ListState,
@@ -84,61 +93,39 @@ impl StoryList {
     }
 }
 
-struct SectionList {
-    pub state: ListState,
+struct SectionTabs {
+    pub index: usize,
     pub sections: Vec<String>,
 }
 
-impl SectionList {
-    fn new() -> SectionList {
-        let mut out = SectionList {
-            state: ListState::default(),
-            sections: SECTIONS
-                .into_iter()
-                .map(|f| String::from(f))
-                .collect::<Vec<String>>(),
-        };
-        out.state.select(Option::from(0 as usize));
-        out
+impl SectionTabs {
+    fn new() -> SectionTabs {
+        SectionTabs {
+            index: 0,
+            sections: SECTIONS.into_iter().map(String::from).collect(),
+        }
     }
 
     fn next(&mut self) -> () {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i == SECTIONS.len() - 1 {
-                    i
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
+        if self.index < SECTIONS.len() - 1 {
+            self.index += 1;
+        }
     }
 
     fn previous(&mut self) -> () {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    i
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
+        if self.index > 0 {
+            self.index -= 1;
+        }
     }
 
     fn selected_section(&self) -> &str {
-        let index = self.state.selected().unwrap();
-        SECTIONS[index]
+        SECTIONS[self.index]
     }
 }
 
 pub struct App {
     story_list: StoryList,
-    section_list: SectionList,
+    section_tabs: SectionTabs,
     client: GuardianContentClient,
     theme: String,
 }
@@ -148,7 +135,7 @@ impl App {
         let api_key = env!("GUARDIAN_API_KEY", "GUARDIAN_API_KEY must be set!");
         App {
             client: GuardianContentClient::new(api_key),
-            section_list: SectionList::new(),
+            section_tabs: SectionTabs::new(),
             story_list: StoryList::new(),
             theme: String::from("default"),
         }
@@ -159,7 +146,7 @@ impl App {
             .client
             .show_fields(vec![Field::BodyText, Field::Headline])
             .order_by(OrderBy::Newest)
-            .section(self.section_list.selected_section())
+            .section(self.section_tabs.selected_section())
             .page_size(5)
             .send()
             .await
@@ -193,6 +180,13 @@ impl App {
             _ => Style::default(),
         }
     }
+
+    fn get_theme_active(&self) -> Style {
+        match self.theme.as_str() {
+            "default" => Style::default().fg(Color::Green).bg(Color::Rgb(0, 0, 50)),
+            _ => Style::default(),
+        }
+    }
 }
 
 #[tokio::main]
@@ -208,16 +202,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if event::poll(TICK_DURATION)? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
-                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Esc => return Ok(()),
                     KeyCode::Down => app.story_list.next(),
                     KeyCode::Up => app.story_list.previous(),
                     KeyCode::Left => {
-                        app.section_list.next();
+                        app.section_tabs.previous();
                         app.refresh().await;
                     }
                     KeyCode::Right => {
-                        app.section_list.previous();
-                        app.refresh().await;
+                        app.section_tabs.next();
+                        app.refresh().await
                     }
                     _ => {}
                 }
