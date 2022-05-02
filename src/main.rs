@@ -1,6 +1,6 @@
 use std::error::Error;
+use std::io;
 use std::io::Stdout;
-use std::{io, thread, time::Duration};
 
 use aletheia::enums::{Field, OrderBy};
 use aletheia::GuardianContentClient;
@@ -21,8 +21,6 @@ use crate::news::news::NewsStory;
 
 mod graphics;
 mod news;
-
-const TICK_DURATION: Duration = Duration::from_millis(100);
 
 fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>, io::Error> {
     enable_raw_mode()?;
@@ -51,6 +49,50 @@ struct StoryList {
     pub state: ListState,
     pub stories: Vec<NewsStory>,
 }
+
+struct Theme {
+    name: &'static str,
+    bg: Color,
+    primary: Color,
+    secondary: Color,
+    active: Color,
+}
+
+impl Theme {
+    fn primary(&self) -> Style {
+        Style::default().fg(self.primary).bg(self.bg)
+    }
+    fn secondary(&self) -> Style {
+        Style::default().fg(self.secondary).bg(self.bg)
+    }
+    fn active(&self) -> Style {
+        Style::default().fg(self.active).bg(self.bg)
+    }
+}
+
+const THEMES: [Theme; 3] = [
+    Theme {
+        name: "default",
+        bg: Color::Rgb(0, 0, 50),
+        primary: Color::White,
+        secondary: Color::Yellow,
+        active: Color::Green,
+    },
+    Theme {
+        name: "paper",
+        bg: Color::Rgb(255, 255, 230),
+        primary: Color::Rgb(75, 75, 50),
+        secondary: Color::Rgb(145, 145, 75),
+        active: Color::Black,
+    },
+    Theme {
+        name: "party",
+        bg: Color::Rgb(255, 0, 255),
+        primary: Color::Rgb(255, 255, 0),
+        secondary: Color::White,
+        active: Color::Gray,
+    },
+];
 
 impl StoryList {
     fn new() -> StoryList {
@@ -109,12 +151,8 @@ impl SectionTabs {
     fn next(&mut self) -> () {
         if self.index < SECTIONS.len() - 1 {
             self.index += 1;
-        }
-    }
-
-    fn previous(&mut self) -> () {
-        if self.index > 0 {
-            self.index -= 1;
+        } else {
+            self.index = 0;
         }
     }
 
@@ -127,7 +165,9 @@ pub struct App {
     story_list: StoryList,
     section_tabs: SectionTabs,
     client: GuardianContentClient,
-    theme: String,
+    theme_idx: usize,
+    section_idx: u8,
+    story_scroll: u16,
 }
 
 impl App {
@@ -137,7 +177,9 @@ impl App {
             client: GuardianContentClient::new(api_key),
             section_tabs: SectionTabs::new(),
             story_list: StoryList::new(),
-            theme: String::from("default"),
+            theme_idx: 0,
+            section_idx: 0,
+            story_scroll: 0,
         }
     }
 
@@ -147,7 +189,7 @@ impl App {
             .show_fields(vec![Field::BodyText, Field::Headline])
             .order_by(OrderBy::Newest)
             .section(self.section_tabs.selected_section())
-            .page_size(5)
+            .page_size(10)
             .send()
             .await
             .unwrap();
@@ -172,19 +214,22 @@ impl App {
         self.story_list.stories = stories;
 
         self.story_list.state.select(Option::from(0 as usize));
+        self.story_scroll = 0;
     }
 
-    fn get_theme(&self) -> Style {
-        match self.theme.as_str() {
-            "default" => Style::default().fg(Color::White).bg(Color::Rgb(0, 0, 50)),
-            _ => Style::default(),
+    fn theme(&self) -> &Theme {
+        &THEMES[self.theme_idx]
+    }
+
+    fn next_section(&mut self) -> () {
+        if self.section_idx == 0 {
+            self.section_idx = 1;
         }
     }
 
-    fn get_theme_active(&self) -> Style {
-        match self.theme.as_str() {
-            "default" => Style::default().fg(Color::Green).bg(Color::Rgb(0, 0, 50)),
-            _ => Style::default(),
+    fn prev_section(&mut self) -> () {
+        if self.section_idx == 1 {
+            self.section_idx = 0;
         }
     }
 }
@@ -199,24 +244,49 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         terminal.draw(|f| ui::ui(f, &mut app))?;
-        if event::poll(TICK_DURATION)? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Esc => return Ok(()),
-                    KeyCode::Down => app.story_list.next(),
-                    KeyCode::Up => app.story_list.previous(),
-                    KeyCode::Left => {
-                        app.section_tabs.previous();
-                        app.refresh().await;
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Esc => return Ok(()),
+                KeyCode::Down => {
+                    if app.section_idx == 0 {
+                        app.story_list.next();
+                        app.story_scroll = 0;
+                    } else {
+                        app.story_scroll += 1
                     }
-                    KeyCode::Right => {
-                        app.section_tabs.next();
-                        app.refresh().await
-                    }
-                    _ => {}
                 }
+                KeyCode::Up => {
+                    if app.section_idx == 0 {
+                        app.story_list.previous();
+                        app.story_scroll = 0;
+                    } else {
+                        if app.story_scroll >= 1 {
+                            app.story_scroll -= 1
+                        }
+                    }
+                }
+                KeyCode::Tab => {
+                    app.section_tabs.next();
+                    app.refresh().await;
+                }
+                KeyCode::Left => {
+                    app.prev_section();
+                }
+                KeyCode::Right => {
+                    app.next_section();
+                }
+                KeyCode::F(5) => {
+                    app.refresh().await;
+                }
+                KeyCode::F(9) => {
+                    if app.theme_idx < THEMES.len() - 1 {
+                        app.theme_idx += 1;
+                    } else {
+                        app.theme_idx = 0;
+                    }
+                }
+                _ => {}
             }
         }
-        thread::sleep(TICK_DURATION);
     }
 }

@@ -1,14 +1,11 @@
 use crate::App;
 use tui::backend::Backend;
-use tui::layout::{Constraint, Direction, Layout, Rect};
+use tui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use tui::style::Modifier;
 use tui::symbols::line::{HORIZONTAL, VERTICAL};
-use tui::text::Spans;
+use tui::text::{Span, Spans};
 use tui::widgets::{Block, Borders, List, ListItem, Paragraph, Tabs, Wrap};
 use tui::Frame;
-
-const FOOTER_TEXT: &str =
-    "<left|right> change section <up|down> change story <esc> quit";
 
 fn wrap_string(string: String, split_len: usize) -> String {
     let mut chars: Vec<char> = string.chars().collect();
@@ -52,10 +49,20 @@ fn render_story_choices<B: Backend>(
         list_items.push(ListItem::new(wrapped));
     }
 
+    let style = match app.section_idx {
+        0 => app.theme().active(),
+        _ => app.theme().primary(),
+    };
+
     let widget = List::new(list_items)
-        .block(Block::default().title("Stories").borders(Borders::ALL))
-        .style(app.get_theme())
-        .highlight_style(app.get_theme_active().add_modifier(Modifier::ITALIC))
+        .block(
+            Block::default()
+                .title("Stories")
+                .borders(Borders::ALL)
+                .style(style),
+        )
+        .style(app.theme().primary())
+        .highlight_style(app.theme().active().add_modifier(Modifier::ITALIC))
         .highlight_symbol(VERTICAL)
         .repeat_highlight_symbol(true);
 
@@ -74,28 +81,44 @@ fn render_sections<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) 
 
     let widget = Tabs::new(tabs)
         .block(Block::default().title("Sections").borders(Borders::ALL))
-        .style(app.get_theme())
-        .highlight_style(app.get_theme_active().add_modifier(Modifier::ITALIC))
+        .style(app.theme().primary())
+        .highlight_style(app.theme().active().add_modifier(Modifier::UNDERLINED))
         .select(app.section_tabs.index);
 
     frame.render_widget(widget, area);
 }
 
 fn render_story<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) -> () {
-    let block = Block::default().borders(Borders::ALL);
+    let style = match app.section_idx {
+        1 => app.theme().active(),
+        _ => app.theme().primary(),
+    };
+
+    let block = Block::default().borders(Borders::ALL).style(style);
     let paragraph = Paragraph::new(&*app.story_list.selected_story().content)
         .block(block)
         .wrap(Wrap { trim: true })
-        .style(app.get_theme());
+        .style(app.theme().primary())
+        .scroll((app.story_scroll, 0));
     frame.render_widget(paragraph, area);
 }
 
-fn render_footer<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) -> () {
-    let block = Block::default().borders(Borders::ALL);
-    let paragraph = Paragraph::new(FOOTER_TEXT)
-        .block(block)
-        .wrap(Wrap { trim: true })
-        .style(app.get_theme());
+fn render_controls<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) -> () {
+    let text = Spans(vec![
+        Span::styled("<left|right>", app.theme().secondary()),
+        Span::from(" change section "),
+        Span::styled("<up|down>", app.theme().secondary()),
+        Span::from(" scroll section "),
+        Span::styled("<f5>", app.theme().secondary()),
+        Span::from(" refresh "),
+        Span::styled("<f9>", app.theme().secondary()),
+        Span::from(format!(" change theme (current: '{}') ", app.theme().name)),
+        Span::styled("<esc>", app.theme().secondary()),
+        Span::from(" quit "),
+    ]);
+    let paragraph = Paragraph::new(text)
+        .style(app.theme().primary())
+        .alignment(Alignment::Center);
     frame.render_widget(paragraph, area);
 }
 
@@ -106,7 +129,7 @@ pub fn ui<B: Backend>(frame: &mut Frame<B>, app: &mut App) {
         .constraints(vec![
             Constraint::Length(3),
             Constraint::Min(0),
-            Constraint::Length(3),
+            Constraint::Length(1),
         ])
         .split(size);
     let columns = Layout::default()
@@ -117,5 +140,5 @@ pub fn ui<B: Backend>(frame: &mut Frame<B>, app: &mut App) {
     render_sections(frame, app, rows[0]);
     render_story_choices(frame, app, columns[0]);
     render_story(frame, app, columns[1]);
-    render_footer(frame, app, rows[2]);
+    render_controls(frame, app, rows[2]);
 }
