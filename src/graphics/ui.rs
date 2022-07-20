@@ -35,19 +35,36 @@ fn wrap_string(string: String, split_len: usize) -> String {
     chars.into_iter().collect::<String>()
 }
 
-fn render_story_choices<B: Backend>(
-    frame: &mut Frame<B>,
-    app: &mut App,
-    area: Rect,
-) -> () {
+fn render_story_choices<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) {
     let story_list_breaker: &str = &*HORIZONTAL.repeat((area.width - 4) as usize);
     let mut list_items: Vec<ListItem> = Vec::new();
     for story in &app.story_list.stories {
-        let mut wrapped = wrap_string(story.title.clone(), (area.width - 4) as usize);
-        wrapped.push('\n');
-        wrapped.push_str(story_list_breaker);
-        list_items.push(ListItem::new(wrapped));
+        let mut string = String::new();
+        let mut story_header = story.by.clone();
+
+        let time_size = story.time.chars().count() as u16;
+        let mut header_size = story_header.chars().count() as u16;
+
+        if story_header.chars().count() > (area.width - (4 + time_size)).into() {
+            story_header.truncate((area.width - (10 + time_size)).into());
+            header_size = story_header.chars().count() as u16;
+        }
+
+        story_header.push_str(
+            &*" ".repeat((area.width - (4 + header_size + time_size)) as usize),
+        );
+        story_header.push_str(&story.time);
+
+        string.push_str(&story_header);
+        string.push('\n');
+        string.push_str(&wrap_string(story.title.clone(), (area.width - 4) as usize));
+        string.push('\n');
+        string.push_str(story_list_breaker);
+        list_items.push(ListItem::new(string));
     }
+
+    // add a buffer item to make it clear you can load more
+    list_items.push(ListItem::new("...".to_string()));
 
     let style = match app.section_idx {
         0 => app.theme().active(),
@@ -62,14 +79,14 @@ fn render_story_choices<B: Backend>(
                 .style(style),
         )
         .style(app.theme().primary())
-        .highlight_style(app.theme().active().add_modifier(Modifier::ITALIC))
+        .highlight_style(app.theme().active())
         .highlight_symbol(VERTICAL)
         .repeat_highlight_symbol(true);
 
     frame.render_stateful_widget(widget, area, &mut app.story_list.state);
 }
 
-fn render_sections<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) -> () {
+fn render_sections<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) {
     let tabs = app
         .section_tabs
         .sections
@@ -88,7 +105,7 @@ fn render_sections<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) 
     frame.render_widget(widget, area);
 }
 
-fn render_story<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) -> () {
+fn render_story<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) {
     let style = match app.section_idx {
         1 => app.theme().active(),
         _ => app.theme().primary(),
@@ -103,7 +120,7 @@ fn render_story<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) -> 
     frame.render_widget(paragraph, area);
 }
 
-fn render_controls<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) -> () {
+fn render_controls<B: Backend>(frame: &mut Frame<B>, app: &mut App, area: Rect) {
     let text = Spans(vec![
         Span::styled("<left|right>", app.theme().secondary()),
         Span::from(" change section "),
