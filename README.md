@@ -1,2 +1,2 @@
-# guardian-rust-tui
-A Text-based Client that let's you read the Guardian (Learning Project).
+# guardian-rust-tui (Learning Project)
+A client that lets you read the Guardian via a text interface.
